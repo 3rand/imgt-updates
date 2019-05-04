@@ -9,127 +9,166 @@
 
 library(shinydashboard)
 library(readr)
-library(reshape2)
+library(plotly)
 
-data <- read_csv("human.csv", col_types = cols(date = col_date(format = "%d. %B %Y")))
-data[is.na(data)] = 0;
-sidebar <- dashboardSidebar(
-  sidebarMenu(
-    menuItem("homo sapiens", tabName = "human", icon = icon("link")),
-    menuItem("mus musculus", icon = icon("link"), tabName = "mouse")
-  )
+human <- read_csv("data/human.csv", col_types = cols(date = col_datetime(format = "%Y-%m-%d")))
+mouse <- read_csv("data/mouse.csv", col_types = cols(date = col_datetime(format = "%Y-%m-%d")))
+
+
+header <- dashboardHeader(
+  title="IMGT Germline Updates"
 )
 
+sidebar <- dashboardSidebar(
+  sidebarMenu(
+    menuItem("Home", tabName = "home", icon=icon("dashboard")),
+    menuItem("Germlines", 
+             menuSubItem("Homo sapiens",tabName = "human", icon = icon("link")),
+             menuSubItem("Mouse",tabName = "mouse", icon = icon("link")),
+             startExpanded = TRUE,
+             tabName = "germlines", icon = icon("list")),
+    menuItem("Source code", icon = icon("file-code-o"), 
+             href = "https://github.com/3rand/imgt-updates")
+    
+  )
+)
 
 body <- dashboardBody(
   tabItems(
+    tabItem(tabName = "home",
+            h3("Welcome to the IMGT germline updates tracker"),
+            p("This tool contains the statistics of the changes made to the IMGT reference directory for human an mouse germlines."),
+            p("The changes are categorized as one of: "),
+            p("removals"),
+            p("gene addition"),
+            p("allelle addition (whenever a gene is added or multiple allelles of existing gene are added)"),
+            p("sequence update (whenever the reference nt sequence of genes was changed"),
+            p("metadata update (whenever anything except for nt sequence was changed, eg name, functionality, numberin etc)"),
+            p(" "),
+            p("The data files along with the source code are maintained over GitHub. Please post an issue there or make a pull request with your recommended changes."),
+            p("Currently the focus is to build up the list of all species as well as maintaining an updated reference.")
+    ),
     tabItem(tabName = "human",
-            h3("Homo sapiens germline")
+            h3("Germline changes for: human, homo sapiens, hs"),
+            fluidRow(
+              box(
+                width = 12,
+                plotlyOutput("humanplot1")
+                
+              ),
+              box(
+                width = 12,
+                title = "Origin selection",
+                sliderInput("sliderhuman", "Date", min(human$date), max(human$date), max(human$date), timeFormat="%Y-%m-%d")
+              )
+              
+            )
     ),
-    
     tabItem(tabName = "mouse",
-            h3("Mus musculus germline")
-    )
-  ),
-  fluidRow(
-    box(
-      width = 12, 
-      title = "Cummulative germline changes", 
-      br(),
-      plotOutput("plot1_human", height = 600)
-    ),
-    box(
-      width = 12, 
-      title = "Change starting point", 
-      sliderInput("slider", "Release date:", min=min(data$date), max=max(data$date), value=max(data$date))
-    ),
-    box(
-      width = 12,
-      title = "Raw data",
-      tableOutput("rawdata")
+            h2("Germline changes for: mouse, mus musculus"),
+            fluidRow(
+              box(
+                width = 12,
+                plotlyOutput("mouseplot1")
+                
+              ),
+              box(
+                width = 12,
+                title = "Origin selection",
+                sliderInput("slidermouse", "Date", min(human$date), max(human$date), max(human$date), timeFormat="%Y-%m-%d")
+              )
+              
+            )
     )
   )
 )
 
-
-
 # Define UI for application that draws a histogram
 ui <- dashboardPage(
-  dashboardHeader(title = "IMGT Germline historical comparison"),
+  skin = "purple",
+  header,
   sidebar,
   body
 )
 
+# Define server logic required to draw a histogram
 server <- function(input, output) {
   
-  humanData <- function(startdate) {
-    data$cumulative_removals = 0;
-    data$cumulative_geneAdditions = 0;
-    data$cumulative_alelleAdditions = 0;
-    data$cumulative_sequenceUpdates = 0;
+  human <- read_csv("data/human.csv", col_types = cols(date = col_datetime(format = "%Y-%m-%d")))
+  
+  makeCumulatives <- function(data,zerodate) {
+    start <- which(human$date <= zerodate)[1];
+    data$cummulative_removals = 0;
+    data$cummulative_geneAdditions = 0;
+    data$cummulative_alelleAdditions = 0;
+    data$cummulative_sequnceUpdates = 0;
     data$cumulative_metadataUpdates = 0;
     
-    start <- which(data$date <= as.Date(startdate,"%Y-%m-%d"))[1]
-    
-    for (i in c(2:nrow(data))) {
-      data$cumulative_removals[i] <- sum(data$removals[1:i])
-      data$cumulative_removals[i] <- data$cumulative_removals[i] - sum(data$cumulative_removals[1:start])
-      
-      data$cumulative_geneAdditions[i] <- sum(data$geneAdditions[1:i])
-      data$cumulative_geneAdditions[i] <- data$cumulative_geneAdditions[i] - sum(data$cumulative_geneAdditions[1:start])
-      
-      data$cumulative_alelleAdditions[i] <- sum(data$allelleAdditions[1:i])
-      data$cumulative_alelleAdditions[i] <- data$cumulative_alelleAdditions[i] - sum(data$cumulative_alelleAdditions[1:start])
-      
-      data$cumulative_sequenceUpdates[i] <- sum(data$sequenceUpdate[1:i])
-      data$cumulative_sequenceUpdates[i] <- data$cumulative_sequenceUpdates[i] - sum(data$cumulative_sequenceUpdates[1:start])
-      
-      data$cumulative_metadataUpdates[i] <- sum(data$metadataUpdate[1:i])
-      data$cumulative_metadataUpdates[i] <- data$cumulative_metadataUpdates[i] - sum(data$cumulative_metadataUpdates[1:start])
+    if (start<nrow(data)) {
+      for (i in c((start+1):nrow(data))) {
+        data$cummulative_removals[i] <- sum(data$removals[1:(i-1)], na.rm = TRUE)
+        data$cummulative_geneAdditions[i] <- sum(data$geneAdditions[1:(i-1)], na.rm = TRUE)
+        data$cummulative_alelleAdditions[i] <- sum(data$allelleAdditions[1:(i-1)], na.rm = TRUE)
+        data$cummulative_sequnceUpdates[i] <- sum(data$sequenceUpdate[1:(i-1)], na.rm = TRUE)
+        data$cumulative_metadataUpdates[i] <- sum(data$metadataUpdate[1:(i-1)], na.rm = TRUE)
+      }
     }
     
-    data$cumulativeToDate <- data$cumulative_removals + data$cumulative_geneAdditions + data$cumulative_alelleAdditions + data$cumulative_sequenceUpdates + data$cumulative_metadataUpdates;
+    if (start>1) {
+      for (i in c((start-1):1)) {
+        data$cummulative_removals[i] <- sum(data$removals[i:start], na.rm = TRUE)
+        data$cummulative_geneAdditions[i] <- sum(data$geneAdditions[i:start], na.rm = TRUE)
+        data$cummulative_alelleAdditions[i] <- sum(data$allelleAdditions[i:start], na.rm = TRUE)
+        data$cummulative_sequnceUpdates[i] <- sum(data$sequenceUpdate[i:start], na.rm = TRUE)
+        data$cumulative_metadataUpdates[i] <- sum(data$metadataUpdate[i:start], na.rm = TRUE)
+      }
+      
+      data$cummulative_removals[1:start] = 0 - data$cummulative_removals[1:start];
+      data$cummulative_geneAdditions[1:start] = 0 - data$cummulative_geneAdditions[1:start];
+      data$cummulative_alelleAdditions[1:start] = 0 - data$cummulative_alelleAdditions[1:start];
+      data$cummulative_sequnceUpdates[1:start] = 0 - data$cummulative_sequnceUpdates[1:start];
+      data$cumulative_metadataUpdates[1:start] = 0 - data$cumulative_metadataUpdates[1:start];
+      
+    }
     
-    data
+    data;
+    
+      
   }
   
+   
   
-  
-  
-  
-  output$plot1_human <- renderPlot({
-    
-    
-    germlineData <- melt(humanData(input$slider), id.vars = c("date","releaseName"), na.rm = FALSE)
-    modifynames <- function(vanames) {
-      gsub("cumulative_", "", vanames)
-    }
-    ploti <- ggplot(
-      germlineData[
-        which(
-          germlineData$variable %in% c("cumulative_removals","cumulative_geneAdditions","cumulative_alelleAdditions","cumulative_sequenceUpdates","cumulative_metadataUpdates")
-          ),], aes(x=date, y=value, fill=variable)) +
-      geom_area(colour="black", size=.2, alpha=.4) +
-      scale_fill_brewer(palette="RdYlBu", breaks=levels(germlineData$variable), name="Type of change", labels=modifynames(levels(germlineData$variable))) +
-      theme(legend.position="top") +
-      geom_area();
-    
-    ploti + 
-      labs(
-        title=input$slider,
-        x = "Release date", 
-        y = "Nr. Changes", 
-        caption = "A historical event plot of updates accumulated to the reference directory for 10 years.\nThe horizontal axis represents the date of release and the vertical axis represents the ammount of changes coloured by type of change as compared to the latest germline as of this study.\nFor any 2 past dates x1 and x2 we can observe the number of changes |y2-y1| between the latest germiles as of those dates.") +
-      scale_x_date(date_breaks = "3 months", date_minor_breaks = "month", date_labels = "%b %Y", sec.axis = dup_axis(name="Release name", breaks = data$date, labels = data$releaseName)) +
-      
-      theme(axis.text.x = element_text(angle = 90))
-    
-    
-  })
-  
-  output$rawdata <- renderDataTable(
-    humanData(input$slider)
-    )
+   output$humanplot1 <- renderPlotly({
+     zerodate = input$sliderhuman;
+     data <- makeCumulatives(human,zerodate);
+     p <- plot_ly(data, x = ~date, y = ~cummulative_removals, name = 'Removals', type = 'scatter', mode = 'none', stackgroup = 'one', fillcolor = '#F5FF8D', text=~releaseName) %>%
+       add_trace(y = ~cummulative_geneAdditions, name = 'Gene Additions', fillcolor = '#50CB86') %>%
+       add_trace(y = ~cummulative_alelleAdditions, name = 'Alelle Additions', fillcolor = '#4C74C9') %>%
+       add_trace(y = ~cummulative_sequnceUpdates, name = 'Sequence Updates', fillcolor = '#700961') %>%
+       add_trace(y = ~cumulative_metadataUpdates, name = 'Metadata Updates', fillcolor = '#312F44') %>%
+       layout(
+         xaxis = list(title = 'Date'),
+         yaxis = list(title = 'Cummulative changes')
+         )
+     
+     p
+   })
+   
+   output$mouseplot1 <- renderPlotly({
+     zerodate = input$slidermouse;
+     data <- makeCumulatives(mouse,zerodate);
+     p <- plot_ly(data, x = ~date, y = ~cummulative_removals, name = 'Removals', type = 'scatter', mode = 'none', stackgroup = 'one', fillcolor = '#F5FF8D', text=~releaseName) %>%
+       add_trace(y = ~cummulative_geneAdditions, name = 'Gene Additions', fillcolor = '#50CB86') %>%
+       add_trace(y = ~cummulative_alelleAdditions, name = 'Alelle Additions', fillcolor = '#4C74C9') %>%
+       add_trace(y = ~cummulative_sequnceUpdates, name = 'Sequence Updates', fillcolor = '#700961') %>%
+       add_trace(y = ~cumulative_metadataUpdates, name = 'Metadata Updates', fillcolor = '#312F44') %>%
+       layout(
+         xaxis = list(title = 'Date'),
+         yaxis = list(title = 'Cummulative changes')
+       )
+     
+     p
+   })
 }
 
 # Run the application 
